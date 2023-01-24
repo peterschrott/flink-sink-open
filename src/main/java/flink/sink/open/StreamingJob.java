@@ -3,6 +3,7 @@ package flink.sink.open;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.flink.api.common.serialization.SerializationSchema;
 import org.apache.flink.connector.kinesis.sink.KinesisStreamsSink;
+import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,26 +21,31 @@ public class StreamingJob {
     private final static Logger LOGGER = LoggerFactory.getLogger(StreamingJob.class);
 
     public static void main(String[] args) throws Exception {
-        // set up the streaming execution environment
-        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
-        var input = new ArrayList<EventUnderTest>();
-        for (int i = 1; i < 100; i++) {
-            input.add(new EventUnderTest(i));
-        }
-        var source = env.fromCollection(input);
+        var env = StreamExecutionEnvironment.getExecutionEnvironment();
 
-        var stream = source.map(e -> {
+        setupStreamExecutionEnvironment(env);
+    }
+
+    public static void setupStreamExecutionEnvironment(StreamExecutionEnvironment env) throws Exception {
+        var sourceStream = createSourceStream(env);
+        var resultStream = sourceStream.map(e -> {
             LOGGER.info("processing element: " + e);
             return e;
         });
 
         var kdsSink = createKinesisStreamSink();
+        resultStream.sinkTo(kdsSink);
 
-        stream.sinkTo(kdsSink);
+        env.execute("Flink Minimal Reproducer");
+    }
 
-        // execute program
-        env.execute("Flink Streaming Java API Skeleton");
+    private static DataStreamSource<EventUnderTest> createSourceStream(StreamExecutionEnvironment env) {
+        var input = new ArrayList<EventUnderTest>();
+        for (int i = 1; i < 100; i++) {
+            input.add(new EventUnderTest(i));
+        }
+        return env.fromCollection(input);
     }
 
     private static KinesisStreamsSink<EventUnderTest> createKinesisStreamSink() {
@@ -52,7 +58,7 @@ public class StreamingJob {
                 .setKinesisClientProperties(sinkProperties)
                 .setSerializationSchema(new CustomSchema())
                 .setPartitionKeyGenerator(element -> String.valueOf(element.hashCode()))
-                .setStreamName("my-stream-name")
+                .setStreamName("my-kinesis-stream")
                 .build();
     }
 
@@ -85,6 +91,10 @@ public class StreamingJob {
 
         public EventUnderTest(Integer attr) {
             this.attr = attr;
+        }
+
+        public Integer getAttr() {
+            return attr;
         }
     }
 }
